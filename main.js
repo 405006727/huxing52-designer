@@ -20,6 +20,7 @@ const BUILDER_ICON = path.join(ROOT, 'build', 'icon.ico');
 const DXF = require('./app/dxf.js');
 const IMGWALL = require('./app/imgwall.js');
 const AUDIT = require('./app/audit.js');
+const DELIVER = require('./app/deliver.js');
 
 const IS_SELFTEST = process.argv.includes('--selftest');
 const DEBUG = process.argv.includes('--debug');
@@ -250,7 +251,7 @@ async function importUnderlay() {
   }
 }
 
-/* ---------------------------- DXF 图纸识别（导入） --------------------------- */
+/* ---------------------------- DXF 图纸识别（导入） ---------------------------- */
 // DXF 常是 GBK 写的，图层名用中文——先按 utf8 试，乱码多了换 gbk 解
 function decodeDxf(buf) {
   let utf = buf.toString('utf8').replace(/^\uFEFF/, '');
@@ -309,7 +310,7 @@ async function autoPlaceMep() {
   } catch (e) { return { err: String(e && e.message), log }; }
 }
 
-/* ---------------------------- DXF 图纸识别（导入） --------------------------- */
+/* ---------------------------- DXF 图纸识别（导入） ---------------------------- */
 // 把「选文件 → 盘点图层 → 识别 → 生成方案 → 自动布水电」抽成可复用的核心函数，
 // 菜单和自测都走它（自测时 interactive=false，不弹对话框）。
 async function applyDxf(file, opt) {
@@ -484,7 +485,9 @@ async function runAudit() {
   // building → 规整成 {name, floors:[{name,walls}]}
   const floors = (plan.floors || []).map((f, i) => {
     const p = f.plan || f;
-    return { name: p.name || f.name || ('第' + (i + 1) + '层'), walls: (p.walls || []).map(normalizeWall) };
+    const nodeMap = {};
+    (p.nodes || []).forEach(n => { if (n && n.id) nodeMap[n.id] = [n.x, n.y]; });
+    return { name: p.name || f.name || ('第' + (i + 1) + '层'), walls: (p.walls || []).map(w => normalizeWall(w, nodeMap)).filter(Boolean) };
   });
   const spec = { name: (plan.name || '当前方案'), floors: floors.filter(f => f.walls.length) };
 
@@ -511,16 +514,136 @@ async function runAudit() {
   return { ok: true, verdict: rep.verdict, file: mdPath, errors: rep.structure.errors.length, warnings: rep.structure.warnings.length, dims: rep.dims ? { checked: rep.dims.checked, bad: rep.dims.bad } : null, roundtrip: rep.roundtrip ? { same: rep.roundtrip.same } : null };
 }
 
-// building 里的墙字段名可能不同（a/b + t），统一成 {a,b,t}
-function normalizeWall(w) {
+// building 里的墙字段名可能不同（a/b + t），a/b 也可能是节点 id，统一成 {a,b,t}（坐标数组）
+function normalizeWall(w, nodeMap) {
   if (!w) return null;
-  const a = w.a || w.p1 || [w.x1, w.y1];
-  const b = w.b || w.p2 || [w.x2, w.y2];
+  let a = w.a || w.p1 || [w.x1, w.y1];
+  let b = w.b || w.p2 || [w.x2, w.y2];
+  if (typeof a === 'string' && nodeMap && nodeMap[a]) a = nodeMap[a];
+  if (typeof b === 'string' && nodeMap && nodeMap[b]) b = nodeMap[b];
+  if (Array.isArray(a) && (a[0] === undefined || a[1] === undefined || a[0] === null)) return null;
   if (!a || !b) return null;
-  return { a: [a[0], a[1]], b: [b[0], b[1]], t: w.t || w.thick || 200 };
+  if (!Array.isArray(a) || !Array.isArray(b)) return null;
+  return { a: [Number(a[0]), Number(a[1])], b: [Number(b[0]), Number(b[1])], t: w.t || w.thick || 200, bearing: !!w.bearing };
 }
 
-/* ------------------------- 户型图片识别（位图 → 方案） ------------------------ */
+/* ------------------------------ 交付包（P0 三件） ------------------------------ */
+// ① 看板导图包：顶视正交 SVG + PNG（交付图 / 日底 / 夜底）+ 坐标 JSON + HA YAML 片段
+// ② 设备档案 + 实体映射表（CSV / Markdown）
+// ③ 回路负载与配电箱表（每回路 kW / 电流 / 线径 / 断路器）
+// 全部落盘到 数据目录\交付\交付-<时间>\，最后打开该目录。
+function readDeviceOverrides() {
+  // 设备档案.json 既可能是「上次导出的数组」，也可能是 {key: {...}} 的字典；两种都认
+  const cands = [
+    path.join(DATA.dir, '设备档案', '设备档案.json'),
+    path.join(DATA.dir, '交付', '设备档案.json'),
+  ];
+  for (const f of cands) {
+    try {
+      if (!fs.existsSync(f)) continue;
+      const raw = JSON.parse(fs.readFileSync(f, 'utf8'));
+      const out = {};
+      if (Array.isArray(raw)) {
+        raw.forEach(d => { if (d && d.key) out[d.key] = d; });
+      } else if (raw && typeof raw === 'object') {
+        Object.keys(raw).forEach(k => { if (raw[k] && typeof raw[k] === 'object') out[k] = raw[k]; });
+      }
+      return { file: f, map: out };
+    } catch (e) { console.warn('[overrides]', f, e && e.message); }
+  }
+  return { file: null, map: {} };
+}
+
+// SVG → PNG：离屏窗口按 SVG 自带宽高渲染，再 capturePage
+async function svgToPng(svg, outPath) {
+  const m = /width="(\d+)"[^>]*height="(\d+)"/.exec(svg);
+  const wpx = Math.min(3200, Math.max(600, m ? Number(m[1]) : 1600));
+  const hpx = Math.min(4000, Math.max(400, m ? Number(m[2]) : 1000));
+  const tmp = path.join(os.tmpdir(), 'ds-svg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7) + '.html');
+  const html = '<!doctype html><html><head><meta charset="utf-8"><style>'
+    + 'html,body{margin:0;padding:0;background:#fff;overflow:hidden}'
+    + 'svg{display:block}</style></head><body>' + svg + '</body></html>';
+  fs.writeFileSync(tmp, html, 'utf8');
+  const off = new BrowserWindow({
+    show: false, width: wpx, height: hpx, frame: false, transparent: false,
+    webPreferences: { offscreen: true, sandbox: false, contextIsolation: true },
+  });
+  try {
+    off.setContentSize(wpx, hpx);
+    await off.loadFile(tmp);
+    await sleep(350);
+    const img = await off.webContents.capturePage();
+    fs.writeFileSync(outPath, img.toPNG());
+    return { ok: true, bytes: fs.statSync(outPath).size };
+  } catch (e) {
+    console.warn('[png]', outPath, e && e.message);
+    return { ok: false, error: e && e.message };
+  } finally {
+    try { off.destroy(); } catch (e) {}
+    try { fs.unlinkSync(tmp); } catch (e) {}
+  }
+}
+
+async function runDelivery(opt) {
+  opt = opt || {};
+  const interactive = opt.interactive !== false;
+  let raw = null;
+  try { raw = await run('window.__designer && window.__designer.bld ? JSON.stringify(window.__designer.bld) : null'); } catch (e) {}
+  if (!raw || raw.length < 20) {
+    if (interactive) notice('当前没有打开的方案，先导入图纸或新建一个');
+    return { ok: false, error: 'no-plan' };
+  }
+  let bld;
+  try { bld = JSON.parse(raw); } catch (e) { return { ok: false, error: 'bad-plan' }; }
+
+  const ov = readDeviceOverrides();
+  const pack = DELIVER.delivery(bld, { overrides: ov.map, width: opt.width || 1600, stamp: opt.stamp });
+  if (!pack.ok) {
+    if (interactive) notice('导不了：' + (pack.error || '方案里没有墙'));
+    return { ok: false, error: pack.error };
+  }
+
+  const now = new Date();
+  const stampDir = opt.dirName || ('交付-' + now.toISOString().slice(0, 10) + '-' + String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0'));
+  const outDir = opt.outDir || path.join(DATA.dir, '交付', stampDir);
+  fs.mkdirSync(outDir, { recursive: true });
+
+  // ① 先写文本类文件
+  for (const f of pack.files) {
+    if (f.type === 'svg') continue;
+    fs.writeFileSync(path.join(outDir, f.name), f.content, 'utf8');
+  }
+  // ② SVG 原样存一份 + 需要位图的渲染 PNG
+  const pngs = [];
+  for (const f of pack.files) {
+    if (f.type !== 'svg') continue;
+    fs.writeFileSync(path.join(outDir, f.name), f.content, 'utf8');
+    if (!f.png) continue;
+    const pngName = f.name.replace(/\.svg$/, '.png');
+    const r = await svgToPng(f.content, path.join(outDir, pngName));
+    pngs.push({ name: pngName, ok: !!r.ok, bytes: r.bytes || 0, error: r.error || null });
+  }
+
+  // ③ 汇总
+  const s = pack.stats;
+  const summaryPath = path.join(outDir, '交付汇总.json');
+  fs.writeFileSync(summaryPath, JSON.stringify({
+    at: now.toISOString(), plan: pack.model.name, overrides: ov.file || '(无，全部用默认口径)',
+    stats: s, png: pngs,
+    files: pack.files.map(f => f.name),
+  }, null, 2), 'utf8');
+
+  if (interactive) {
+    notice('交付包已生成：' + outDir + '\n' + s.floors + ' 层 / ' + s.devices + ' 个点位 / ' + s.breakers + ' 路断路器 / 装接负荷 ' + (s.totalW / 1000).toFixed(1) + ' kW（建议总闸 ' + s.mainBreaker + 'A）', 9000);
+    shell.openPath(outDir);
+  }
+  return {
+    ok: true, dir: outDir, files: pack.files.map(f => f.name), pngs,
+    stats: s, overrides: ov.file,
+  };
+}
+
+/* ------------------------- 户型图片识别（位图 → 方案） ------------------------- */
 // 流程：读图（nativeImage 解码，无需第三方库）→ 灰度 → 识墙（app/imgwall.js）
 // → 用户给「图上这套房的实际总宽」做比例尺 → 生成方案 → 自动布水电。
 async function applyImagePlan(file, opt) {
@@ -755,6 +878,9 @@ function buildMenu() {
         { label: '拆墙', click: () => clickByText('拆墙') },
         { type: 'separator' },
         { label: '方案对账（结构 / 尺寸链 / 墙体往返）…', accelerator: 'CmdOrCtrl+Alt+A', click: runAudit },
+        { type: 'separator' },
+        { label: '导交付包（看板图 / 设备清单 / 配电箱表）…', accelerator: 'CmdOrCtrl+Alt+D', click: () => runDelivery() },
+        { label: '打开交付目录', click: () => shell.openPath(path.join(DATA.dir, '交付')) },
       ],
     },
     {
@@ -1129,6 +1255,23 @@ async function runSelfTest() {
         } catch (e) { return 'ERR:' + e.message; } })()`);
       }
     } catch (e) { checks.multiFail = String(e && e.message); }
+
+    // ===== 4.7 交付包：看板图 + 设备档案 / 实体映射 + 配电箱回路表 =====
+    try {
+      const dv = await runDelivery({ interactive: false, outDir: path.join(artDir, 'deliver'), dirName: 'deliver', stamp: '2026-11-25' });
+      checks.deliveryOk = !!dv.ok;
+      checks.deliveryError = dv.error || null;
+      if (dv.ok) {
+        checks.deliveryStats = dv.stats;
+        checks.deliveryFiles = dv.files.length;
+        checks.deliveryOverrides = dv.overrides || null;
+        checks.deliveryPng = dv.pngs.map(p => ({ name: p.name, ok: p.ok, bytes: p.bytes }));
+        checks.deliveryPngOk = dv.pngs.filter(p => p.ok && p.bytes > 20000).length;
+        checks.deliveryPngAll = dv.pngs.length;
+        const big = dv.pngs.filter(p => p.ok).sort((a, b) => b.bytes - a.bytes)[0];
+        if (big) { try { fs.copyFileSync(path.join(dv.dir, big.name), path.join(artDir, 'deliver-sample.png')); } catch (e) {} }
+      }
+    } catch (e) { checks.deliveryFail = String(e && e.message); }
 
     // ===== 5. 菜单项 + 菜单切视图 =====
     const menu = Menu.getApplicationMenu();
