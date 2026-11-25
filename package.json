@@ -1,7 +1,7 @@
 {
   "name": "huxing52-designer",
   "productName": "52户型装修设计",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "52户型装修设计 —— 从 CAD 图纸（DXF，含尺寸标注校核、多层整栋）或户型图片自动识墙，或导入户型图描图，做 2D/3D 户型、水电点位与回路、报价、PDF 施工图。",
   "main": "main.js",
   "author": "52",
@@ -66,4 +66,3 @@
     }
   }
 }
-
