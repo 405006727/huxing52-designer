@@ -1,0 +1,330 @@
+/* ==========================================================================
+   52户型装修设计 · 桌面版外观层
+   做法：优先改设计器自己的 CSS 变量（--panel/--line/--text/--muted/--accent…），
+   让整块界面统一换肤；再对按钮、面板、滚动条、画布做细修。
+   不改任何 DOM 结构，不影响坐标计算与业务逻辑。
+   ========================================================================== */
+
+/* ---------- 1. 换肤：主色 + 中性色（!important 覆盖设计器自带定义） ---------- */
+:root{
+  --accent:#2563eb !important;
+  --accent-soft:#eaf1ff !important;
+  --line:#e4e8ef !important;
+  --panel:#ffffff !important;
+  --text:#141a23 !important;
+  --muted:#6d7787 !important;
+  --danger:#e5484d !important;
+  --new:#f2760c !important;
+  --font:"Segoe UI Variable Text","HarmonyOS Sans SC","PingFang SC","Microsoft YaHei UI","Microsoft YaHei",system-ui,-apple-system,"Segoe UI",sans-serif !important;
+
+  /* 桌面版自用的一些刻度 */
+  --ds-radius:8px;
+  --ds-shadow-1:0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.04);
+  --ds-shadow-2:0 6px 18px rgba(16,24,40,.10);
+  --ds-shadow-3:0 24px 60px rgba(16,24,40,.20);
+}
+
+/* ---------- 2. 全局观感 ---------- */
+html, body{
+  font-family:var(--font) !important;
+  color:var(--text);
+  background:#eef1f5 !important;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+  font-feature-settings:"tnum" 1;   /* 面积/尺寸数字等宽，长表更好扫 */
+}
+*{ -webkit-tap-highlight-color:transparent; }
+
+/* 滚动条 */
+::-webkit-scrollbar{ width:10px; height:10px; }
+::-webkit-scrollbar-track{ background:transparent; }
+::-webkit-scrollbar-thumb{
+  background:#c8d0dc; border-radius:999px;
+  border:2px solid transparent; background-clip:content-box;
+}
+::-webkit-scrollbar-thumb:hover{ background:#a9b4c3; background-clip:content-box; }
+::-webkit-scrollbar-corner{ background:transparent; }
+
+/* ---------- 3. 按钮 ---------- */
+.btn{
+  border-radius:var(--ds-radius) !important;
+  border-color:var(--line) !important;
+  transition:background-color .15s ease, border-color .15s ease,
+             box-shadow .18s ease, transform .1s ease, color .15s ease;
+}
+.btn:hover:not(:disabled){
+  background:#f4f7fc !important;
+  border-color:#d3dbe6 !important;
+  box-shadow:var(--ds-shadow-1);
+}
+.btn:active:not(:disabled){ transform:translateY(.5px); }
+.btn:disabled{ opacity:.45 !important; cursor:not-allowed; }
+.btn.primary{
+  background:linear-gradient(180deg,#3b82f6 0%, #2563eb 100%) !important;
+  border-color:#2563eb !important;
+  box-shadow:0 1px 2px rgba(37,99,235,.35), 0 6px 16px rgba(37,99,235,.18);
+}
+.btn.primary:hover:not(:disabled){ filter:brightness(1.04); box-shadow:0 2px 6px rgba(37,99,235,.4), 0 10px 22px rgba(37,99,235,.22); }
+button:focus-visible, .btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible{
+  outline:2px solid rgba(37,99,235,.45); outline-offset:2px;
+}
+
+/* 分段控件：做成一段“轨道 + 选中胶囊” */
+.seg{
+  border-radius:10px !important;
+  background:#f1f4f9 !important;
+  border:1px solid var(--line) !important;
+  box-shadow:inset 0 1px 2px rgba(16,24,40,.04);
+}
+.seg .on, .seg .active{
+  box-shadow:0 1px 2px rgba(16,24,40,.10);
+  border-radius:8px !important;
+}
+
+/* ---------- 4. 左/右面板 ---------- */
+#leftPanel{
+  background:#fff !important;
+  border-right:1px solid var(--line) !important;
+  box-shadow:1px 0 0 rgba(16,24,40,.02);
+}
+.sec h4{
+  font-weight:650 !important;
+  letter-spacing:.06em !important;
+  color:#4a5567 !important;
+  display:flex; align-items:center; gap:8px;
+}
+.sec h4::before{
+  content:""; width:3px; height:12px; border-radius:2px;
+  background:linear-gradient(180deg,#60a5fa,#2563eb); opacity:.9;
+}
+.hint, .tips{ color:var(--muted) !important; line-height:1.62 !important; }
+
+/* 键值行：更清晰的分隔（不抢内容） */
+.kv{ padding:3px 0; }
+
+/* 输入控件 */
+input, select, textarea{
+  border-radius:7px !important;
+  border-color:var(--line) !important;
+  transition:border-color .15s ease, box-shadow .15s ease, background .15s ease;
+  background:#fff;
+}
+input:hover, select:hover, textarea:hover{ border-color:#cfd8e5 !important; }
+input:focus, select:focus, textarea:focus{
+  border-color:#3b82f6 !important;
+  box-shadow:0 0 0 3px rgba(59,130,246,.16) !important;
+  outline:none !important;
+}
+
+/* ---------- 5. 画布 / 舞台 ---------- */
+#stage, .stage{
+  background:
+    radial-gradient(900px 620px at 50% 0%, #ffffff 0%, rgba(255,255,255,0) 62%),
+    linear-gradient(180deg, #f7f9fc 0%, #eceff4 100%) !important;
+}
+.pane, #pane2d, #pane3d{ background:transparent !important; }
+
+/* 顶部工具条：白底 + 发丝线 + 轻投影，与画布分层 */
+header, .topbar, .top-bar, .toolbar{
+  background:#fff !important;
+  box-shadow:0 1px 0 var(--line), 0 4px 14px rgba(16,24,40,.05);
+  z-index:12;
+}
+.sep{ background:var(--line) !important; }
+
+/* ---------- 6. 浮层：下拉、弹窗、提示 ---------- */
+.dropdown, .modal-box, .poprow{
+  border-radius:12px !important;
+  border-color:var(--line) !important;
+  box-shadow:var(--ds-shadow-3) !important;
+}
+#toast{
+  border-radius:10px !important;
+  background:rgba(17,24,33,.93) !important;
+  box-shadow:var(--ds-shadow-2) !important;
+  backdrop-filter:blur(8px);
+  font-size:13px !important;
+  letter-spacing:.2px;
+  padding:9px 14px !important;
+}
+
+/* ---------- 7. 桌面版小徽标 ---------- */
+#dsDeskBadge{
+  position:fixed; right:12px; bottom:8px; z-index:58;
+  display:flex; align-items:center; gap:8px;
+  padding:6px 11px 6px 9px;
+  background:rgba(255,255,255,.9);
+  border:1px solid var(--line);
+  border-radius:999px;
+  box-shadow:var(--ds-shadow-1);
+  backdrop-filter:blur(10px);
+  font-size:11.5px; color:#6d7787; letter-spacing:.3px;
+  pointer-events:none; user-select:none;
+}
+#dsDeskBadge i{
+  width:7px; height:7px; border-radius:50%;
+  background:linear-gradient(180deg,#34d399,#10b981);
+  box-shadow:0 0 0 3px rgba(16,185,129,.16);
+}
+
+/* ---------- 8. DXF 图层选择面板（桌面版自带） ---------- */
+#dsLayerPick{
+  position:fixed; inset:0; z-index:1000;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(12,18,28,.42);
+  backdrop-filter:blur(3px);
+  animation:dslpIn .16s ease-out;
+}
+@keyframes dslpIn{ from{opacity:0} to{opacity:1} }
+#dsLayerPick .dslp-card{
+  width:min(680px, 88vw); max-height:82vh;
+  display:flex; flex-direction:column;
+  background:#fff; border-radius:16px;
+  box-shadow:0 32px 80px rgba(12,18,28,.34), 0 2px 0 rgba(255,255,255,.6) inset;
+  overflow:hidden;
+  font-family:var(--font);
+}
+#dsLayerPick .dslp-head{
+  padding:18px 22px 12px; border-bottom:1px solid var(--line);
+  display:flex; flex-direction:column; gap:4px;
+  background:linear-gradient(180deg,#fbfcfe,#f5f8fc);
+}
+#dsLayerPick .dslp-head b{ font-size:16.5px; color:#0f172a; letter-spacing:.2px; }
+#dsLayerPick .dslp-head span{ font-size:12.5px; color:var(--muted); }
+#dsLayerPick .dslp-body{ padding:14px 18px 6px; overflow:auto; }
+#dsLayerPick .dslp-hint{
+  font-size:12.5px; line-height:1.7; color:#5b6577;
+  background:#f7f9fd; border:1px solid var(--line); border-radius:10px;
+  padding:9px 12px; margin-bottom:12px;
+}
+#dsLayerPick .dslp-list{ display:flex; flex-direction:column; gap:2px; padding-bottom:10px; }
+#dsLayerPick .dslp-row{
+  display:grid; grid-template-columns:auto 1fr 78px 82px 120px;
+  align-items:center; gap:10px;
+  padding:7px 10px; border-radius:9px; cursor:pointer;
+  transition:background .12s ease;
+}
+#dsLayerPick .dslp-row:hover{ background:#f4f7fc; }
+#dsLayerPick .dslp-row.dim{ opacity:.62; }
+#dsLayerPick .dslp-row input{ width:15px; height:15px; accent-color:#2563eb; margin:0; }
+#dsLayerPick .dslp-name{ font-size:13px; color:#18202c; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#dsLayerPick .dslp-num, #dsLayerPick .dslp-len{ font-size:12px; color:#6d7787; text-align:right; font-variant-numeric:tabular-nums; }
+#dsLayerPick .dslp-tip{ font-size:11.5px; color:#93a0b4; text-align:right; }
+#dsLayerPick .dslp-empty{ padding:18px 4px; color:#93a0b4; font-size:13px; }
+#dsLayerPick .dslp-foot{
+  display:flex; align-items:center; gap:10px;
+  padding:12px 18px; border-top:1px solid var(--line); background:#fbfcfe;
+}
+#dsLayerPick .dslp-count{ flex:1; font-size:12.5px; color:#6d7787; }
+#dsLayerPick .dslp-btn{
+  font:inherit; font-size:13px; padding:8px 16px; border-radius:9px; cursor:pointer;
+  border:1px solid #2563eb; color:#fff;
+  background:linear-gradient(180deg,#3b82f6,#2563eb);
+  box-shadow:0 1px 2px rgba(37,99,235,.35), 0 6px 16px rgba(37,99,235,.18);
+  transition:filter .15s ease, transform .1s ease, opacity .15s ease;
+}
+#dsLayerPick .dslp-btn:hover{ filter:brightness(1.05); }
+#dsLayerPick .dslp-btn:disabled{ opacity:.45; cursor:not-allowed; box-shadow:none; }
+#dsLayerPick .dslp-btn.ghost{
+  background:#fff; color:#475569; border-color:var(--line); box-shadow:none;
+}
+#dsLayerPick .dslp-btn.ghost:hover{ background:#f4f7fc; border-color:#d3dbe6; }
+
+/* ---------- 9. 桌面版通知条（导入结果等） ---------- */
+#dsNotice{
+  position:fixed; left:50%; bottom:54px; transform:translate(-50%, 12px);
+  z-index:1001; max-width:min(760px, 86vw);
+  padding:11px 18px; border-radius:12px;
+  background:rgba(17,24,33,.93); color:#fff;
+  font:13px/1.6 var(--font); letter-spacing:.2px;
+  box-shadow:0 18px 44px rgba(12,18,28,.34);
+  backdrop-filter:blur(8px);
+  opacity:0; pointer-events:none;
+  transition:opacity .22s ease, transform .22s ease;
+}
+#dsNotice.on{ opacity:1; transform:translate(-50%, 0); }
+
+/* ---------- 11. v2 卡片化：左/右面板的分组做成卡片，层次更清楚 ---------- */
+:root{ --ds-card:#ffffff; --ds-card-hover:#fcfdff; }
+
+.tabbody{ padding:12px 12px 16px !important; display:flex; flex-direction:column; gap:10px; }
+
+.sec{
+  background:var(--ds-card) !important;
+  border:1px solid var(--line) !important;
+  border-radius:12px !important;
+  padding:12px 13px !important;
+  margin:0 !important;
+  box-shadow:var(--ds-shadow-1);
+}
+.sec:hover{ background:var(--ds-card-hover) !important; border-color:#dbe2ee !important; }
+.sec h4{ margin:0 0 9px !important; font-size:12px !important; }
+.sec + .sec{ margin-top:0 !important; }
+
+/* 左栏标签条：更像分段控件 */
+.tabs, .tabbar{ padding:8px 10px 0 !important; }
+.tabs button, .tabbar button{
+  position:relative; font-weight:600 !important; letter-spacing:.4px;
+  transition:color .15s ease;
+}
+.tabs button::after, .tabbar button::after{
+  content:""; position:absolute; left:10%; right:10%; bottom:-1px; height:2px;
+  border-radius:2px; background:transparent; transition:background .18s ease;
+}
+.tabs button.on::after, .tabbar button.on::after{
+  background:linear-gradient(90deg,#60a5fa,#2563eb);
+}
+
+/* 顶栏品牌区：logo 加一点光，标题层次拉开 */
+.brand{ gap:10px !important; }
+.logo{
+  border-radius:9px !important;
+  box-shadow:0 2px 8px rgba(37,99,235,.32), 0 0 0 1px rgba(255,255,255,.5) inset;
+}
+.brand b{ letter-spacing:.3px; }
+
+/* 右侧属性面板同样卡片化 */
+#rightPanel .sec{ background:var(--ds-card) !important; }
+
+/* 画布角标按钮（放大/缩小/适配）做轻磨砂 */
+.iconbtn{
+  border-radius:10px !important;
+  box-shadow:var(--ds-shadow-1) !important;
+}.iconbtn{ transition:transform .12s ease, background .15s ease; }
+.iconbtn:active{ transform:scale(.96); }
+
+/* ---------- 12. 窄窗口适配 ---------- */
+@media (max-width:1400px){
+  #leftPanel{ font-size:12.5px; }
+  .btn{ padding:4px 9px !important; }
+}
+body{ overscroll-behavior:none; }
+
+/* 楼层快切浮层：桌面端去掉半透明，避免平面图从面板底下透出来 */
+#floorDock{
+  background:#ffffff !important;
+  border:1px solid #e3e9f2 !important;
+  box-shadow:0 10px 24px rgba(20,36,64,.10), 0 1px 2px rgba(20,36,64,.06) !important;
+  backdrop-filter:none !important;
+}
+#floorDock .fd-list button{ background:#fff !important; border-color:#e6ebf3 !important; }
+#floorDock .fd-list button.on{ background:#2563eb !important; border-color:#2563eb !important; color:#fff !important; }
+
+/* ---------- 13. 左右侧栏折叠（贴边小把手） ---------- */
+#leftPanel.ds-hidden, aside.right.ds-hidden{ display:none !important; }
+.ds-edge{
+  position:fixed; z-index:60; width:22px; height:68px; padding:0;
+  display:flex; align-items:center; justify-content:center;
+  border:1px solid #dde4ef;
+  background:linear-gradient(180deg,#ffffff,#f3f6fb);
+  color:#5b6b84; cursor:pointer;
+  box-shadow:0 4px 14px rgba(20,36,64,.14);
+  transition:background .15s ease, color .15s ease, box-shadow .15s ease;
+}
+.ds-edge-left{ border-radius:0 10px 10px 0; border-left:0; }
+.ds-edge-right{ border-radius:10px 0 0 10px; border-right:0; }
+.ds-edge svg{ width:13px; height:13px; }
+.ds-edge svg path{ fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; }
+.ds-edge:hover{ background:linear-gradient(180deg,#eff6ff,#dbeafe); color:#1d4ed8; box-shadow:0 6px 18px rgba(37,99,235,.28); }
+.ds-edge:active{ transform:translateY(1px); }
+.ds-edge.shut{ background:linear-gradient(180deg,#ffffff,#eef2f8); color:#93a1b5; }
