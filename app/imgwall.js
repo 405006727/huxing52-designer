@@ -377,7 +377,7 @@
     var vAll = dedupeBars(barsV.concat(pairedV), true);
     var hAll = dedupeBars(barsH.concat(pairedH), false);
 
-    // 太短 / 太细的丢掉；横竖都满足的保留（墙埛很常见）
+    // 太短 / 太细的丢掉；横竖都满足的保留（墙垛很常见）
     var keptV = vAll.filter(function (b) { return barLen(b, true) >= minLenPx && barThk(b, true) >= 1.5; });
     var keptH = hAll.filter(function (b) { return barLen(b, false) >= minLenPx && barThk(b, false) >= 1.5; });
 
