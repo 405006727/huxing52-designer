@@ -1,0 +1,8 @@
+node_modules/
+dist/
+data/
+方案/
+*.log
+build/*.png
+build/*.json
+build/roundtrip.dxf

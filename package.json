@@ -1,0 +1,67 @@
+{
+  "name": "huxing52-designer",
+  "productName": "52户型装修设计",
+  "version": "1.2.0",
+  "description": "52户型装修设计 —— 导入 CAD 图纸（DXF）自动识墙，或导入户型图描图，做 2D/3D 户型、水电点位与回路、报价、PDF 施工图。",
+  "main": "main.js",
+  "author": "52",
+  "license": "MIT",
+  "private": true,
+  "devDependencies": {
+    "electron": "45.5.0",
+    "electron-builder": "26.0.12"
+  },
+  "build": {
+    "appId": "com.huxing52.designer",
+    "productName": "52户型装修设计",
+    "asar": true,
+    "compression": "maximum",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "theme.css",
+      "theme-dark.css",
+      "app/**/*",
+      "build/icon.ico",
+      "build/fixture_cad.dxf"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "52户型装修设计",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "installerLanguages": [
+        "zh_CN"
+      ],
+      "language": "2052",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "52户型装修设计-安装版-${version}.exe"
+    }
+  }
+}
