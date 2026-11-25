@@ -1,5 +1,5 @@
 /* ==========================================================================
-   52户型装修设计 · 桌面版外观层 v2 —— 深色模式
+   紫檀山装修设计器 · 桌面版外观层 v2 —— 深色模式
    用法：主进程在切换主题时 insertCSS / removeInsertedCSS；不改 DOM。
    ========================================================================== */
 
@@ -176,6 +176,27 @@ header .brand, header .logo, .brand, .logo{ background:transparent !important; }
 #dsLayerPick .dslp-btn.ghost{ background:#1b2230 !important; color:#c7d2e0 !important; border-color:#2f3a4b !important; }
 #dsLayerPick .dslp-btn.ghost:hover{ background:#232c3c !important; }
 #dsLayerPick input{ accent-color:#3b82f6; }
+
+/* 数字输入浮层（深色） */
+#dsAsk{ background:rgba(4,7,12,.6) !important; }
+#dsAsk .dsak-card{
+  background:#161c26 !important;
+  box-shadow:0 32px 80px rgba(0,0,0,.6), 0 1px 0 rgba(255,255,255,.06) inset !important;
+}
+#dsAsk .dsak-head{ background:linear-gradient(180deg,#1b222d,#161c26) !important; border-color:#2a3341 !important; }
+#dsAsk .dsak-head b{ color:#eaf0f8 !important; }
+#dsAsk .dsak-hint{ background:#1a212c !important; border-color:#2a3341 !important; color:#9fb0c6 !important; }
+#dsAsk .dsak-label, #dsAsk .dsak-suffix{ color:#93a1b5 !important; }
+#dsAsk .dsak-input{
+  background:#101620 !important; border-color:#2f3a4b !important; color:#e7ecf4 !important;
+}
+#dsAsk .dsak-input:focus{ border-color:#3b82f6 !important; box-shadow:0 0 0 3px rgba(59,130,246,.18) !important; }
+#dsAsk .dsak-chip{ background:#1b2230 !important; border-color:#2f3a4b !important; color:#c7d2e0 !important; }
+#dsAsk .dsak-chip:hover{ background:#232c3c !important; }
+#dsAsk .dsak-foot{ background:#141a23 !important; border-color:#2a3341 !important; }
+#dsAsk .dsak-btn.ghost{ background:#1b2230 !important; color:#c7d2e0 !important; border-color:#2f3a4b !important; }
+#dsAsk .dsak-btn.ghost:hover{ background:#232c3c !important; }
+#dsAsk .dsak-err{ color:#f87171 !important; }
 
 /* 楼层快切浮层深色 */
 #floorDock{

@@ -1,5 +1,5 @@
 /* ==========================================================================
-   52户型装修设计 · 桌面版外观层
+   紫檀山装修设计器 · 桌面版外观层 v1.1
    做法：优先改设计器自己的 CSS 变量（--panel/--line/--text/--muted/--accent…），
    让整块界面统一换肤；再对按钮、面板、滚动条、画布做细修。
    不改任何 DOM 结构，不影响坐标计算与业务逻辑。
@@ -230,6 +230,64 @@ header, .topbar, .top-bar, .toolbar{
 }
 #dsLayerPick .dslp-btn.ghost:hover{ background:#f4f7fc; border-color:#d3dbe6; }
 
+/* ---------- 8.5 数字输入浮层（图片识墙的比例尺） ---------- */
+#dsAsk{
+  position:fixed; inset:0; z-index:1000;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(12,18,28,.42);
+  backdrop-filter:blur(3px);
+  animation:dslpIn .16s ease-out;
+}
+#dsAsk .dsak-card{
+  width:min(520px, 88vw);
+  display:flex; flex-direction:column;
+  background:#fff; border-radius:16px;
+  box-shadow:0 32px 80px rgba(12,18,28,.34), 0 2px 0 rgba(255,255,255,.6) inset;
+  overflow:hidden; font-family:var(--font);
+}
+#dsAsk .dsak-head{
+  padding:17px 22px 12px; border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,#fbfcfe,#f5f8fc);
+}
+#dsAsk .dsak-head b{ font-size:16.5px; color:#0f172a; letter-spacing:.2px; }
+#dsAsk .dsak-body{ padding:14px 20px 6px; }
+#dsAsk .dsak-hint{
+  font-size:12.5px; line-height:1.7; color:#5b6577;
+  background:#f7f9fd; border:1px solid var(--line); border-radius:10px;
+  padding:9px 12px; margin-bottom:12px;
+}
+#dsAsk .dsak-line{ display:flex; align-items:center; gap:10px; }
+#dsAsk .dsak-label{ font-size:13px; color:#475569; white-space:nowrap; }
+#dsAsk .dsak-input{
+  flex:1; font:inherit; font-size:15px; padding:9px 12px;
+  border:1px solid var(--line); border-radius:10px; outline:none;
+  color:#0f172a; background:#fff; font-variant-numeric:tabular-nums;
+}
+#dsAsk .dsak-input:focus{ border-color:#93b4f8; box-shadow:0 0 0 3px rgba(37,99,235,.12); }
+#dsAsk .dsak-suffix{ font-size:12.5px; color:#6d7787; }
+#dsAsk .dsak-chips{ display:flex; flex-wrap:wrap; gap:7px; margin-top:11px; }
+#dsAsk .dsak-chip{
+  font:inherit; font-size:12.5px; padding:5px 11px; border-radius:999px; cursor:pointer;
+  border:1px solid var(--line); background:#fff; color:#475569;
+  transition:background .12s ease, border-color .12s ease;
+}
+#dsAsk .dsak-chip:hover{ background:#f4f7fc; border-color:#d3dbe6; }
+#dsAsk .dsak-err{ min-height:18px; margin-top:8px; font-size:12px; color:#dc2626; }
+#dsAsk .dsak-foot{
+  display:flex; align-items:center; justify-content:flex-end; gap:10px;
+  padding:12px 18px 14px; border-top:1px solid var(--line); background:#fbfcfe;
+}
+#dsAsk .dsak-btn{
+  font:inherit; font-size:13px; padding:8px 18px; border-radius:9px; cursor:pointer;
+  border:1px solid #2563eb; color:#fff;
+  background:linear-gradient(180deg,#3b82f6,#2563eb);
+  box-shadow:0 1px 2px rgba(37,99,235,.35), 0 6px 16px rgba(37,99,235,.18);
+  transition:filter .15s ease, transform .1s ease;
+}
+#dsAsk .dsak-btn:hover{ filter:brightness(1.05); }
+#dsAsk .dsak-btn.ghost{ background:#fff; color:#475569; border-color:var(--line); box-shadow:none; }
+#dsAsk .dsak-btn.ghost:hover{ background:#f4f7fc; border-color:#d3dbe6; }
+
 /* ---------- 9. 桌面版通知条（导入结果等） ---------- */
 #dsNotice{
   position:fixed; left:50%; bottom:54px; transform:translate(-50%, 12px);
@@ -328,3 +386,4 @@ body{ overscroll-behavior:none; }
 .ds-edge:hover{ background:linear-gradient(180deg,#eff6ff,#dbeafe); color:#1d4ed8; box-shadow:0 6px 18px rgba(37,99,235,.28); }
 .ds-edge:active{ transform:translateY(1px); }
 .ds-edge.shut{ background:linear-gradient(180deg,#ffffff,#eef2f8); color:#93a1b5; }
+
