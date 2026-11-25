@@ -17,6 +17,7 @@
   检查每层墙数 / 墙总长 / 外框 / 短墙 / 疑似重复墙 / 悬空端点，叠上尺寸标注对账与 DXF 往返比对，
   输出 markdown + json 报告到安装目录的 `对账\` 并自动打开。命令行同名入口 `tools/audit.mjs` 可接 CI。
 - 其他：新增页面内数字输入浮层 `app/ask.js`（浅色 / 深色都做了样式）；自测扩到「空白首屏 / 折叠 / DXF / 图片识墙 / 整栋两层 / 对账 / 深色」七项。
+- 仓库自测夹具：`build/` 补齐合成夹具——`fixture_cad.dxf`（27 墙 CAD 图纸，含尺寸文字 / 门弧 / 轴线干扰）、`spec_fixture.json`（配套 spec 样例）、DXF 生成脚本 `make_fixture.py`，并加 `build/README.md` 说明单测与自测怎么跑；克隆下来 `node build/unit_dims.js` 即可验收读图链路（位图夹具由 `make_fixture_plan.py` 现场生成）。
 
 ## 1.2.0（2026-11-25）
 
