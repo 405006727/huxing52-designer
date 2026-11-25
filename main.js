@@ -251,7 +251,7 @@ async function importUnderlay() {
   }
 }
 
-/* ---------------------------- DXF 图纸识别（导入） ---------------------------- */
+/* ---------------------------- DXF 图纸识别（导入） --------------------------- */
 // DXF 常是 GBK 写的，图层名用中文——先按 utf8 试，乱码多了换 gbk 解
 function decodeDxf(buf) {
   let utf = buf.toString('utf8').replace(/^\uFEFF/, '');
@@ -310,7 +310,7 @@ async function autoPlaceMep() {
   } catch (e) { return { err: String(e && e.message), log }; }
 }
 
-/* ---------------------------- DXF 图纸识别（导入） ---------------------------- */
+/* ---------------------------- DXF 图纸识别（导入） --------------------------- */
 // 把「选文件 → 盘点图层 → 识别 → 生成方案 → 自动布水电」抽成可复用的核心函数，
 // 菜单和自测都走它（自测时 interactive=false，不弹对话框）。
 async function applyDxf(file, opt) {
@@ -643,7 +643,7 @@ async function runDelivery(opt) {
   };
 }
 
-/* ------------------------- 户型图片识别（位图 → 方案） ------------------------- */
+/* ------------------------- 户型图片识别（位图 → 方案） ------------------------ */
 // 流程：读图（nativeImage 解码，无需第三方库）→ 灰度 → 识墙（app/imgwall.js）
 // → 用户给「图上这套房的实际总宽」做比例尺 → 生成方案 → 自动布水电。
 async function applyImagePlan(file, opt) {
