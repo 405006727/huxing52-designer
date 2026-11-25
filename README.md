@@ -95,16 +95,20 @@
 | `app/dxf.js` | DXF 识别模块（图层盘点、双线成墙、spec 生成） |
 | `app/designer.html` | 设计器本体（单文件前端，2.5 MB：2D/3D/水电/报价/出图全在里面） |
 | `build/` | 图标、识别测试夹具、打包钩子脚本 |
-| `tools/extract-app.mjs` | 从安装包的 `resources/app.asar` 解出上面这些文件 |
+| `tools/extract-app.mjs` | 从安装包的 `resources/app.asar` 补齐大体积文件 |
 
-> 说明：`app/designer.html` 是 2.5 MB 的压缩单文件构建产物，二进制级别的体积不适合直接塞进 Git 文本。
-> 装好软件后用一条命令就能从安装包里解出来放到仓库对应位置：
+> 说明：**全部文本源码都已入库**（`main.js`、`theme.css`、`theme-dark.css`、`app/dxf.js`、`app/shell.js`、`app/picker.js`、
+> `package.json`、`tools/`），拉下来就能直接读、直接改、直接 diff。
+> 只有两个大体积 / 二进制文件没有入库：`app/designer.html`（2.5 MB 压缩单文件构建产物）与 `build/icon.ico`。
+> 装好软件后用一条命令就能从安装包里把它们补齐到仓库对应位置：
 >
 > ```powershell
 > node tools/extract-app.mjs "$env:LOCALAPPDATA\Programs\52户型装修设计\resources\app.asar"
 > npm install
 > npx electron .
 > ```
+>
+> `build/fixture_cad.dxf`（自测用的识别夹具）同样用 `build/make_fixture.py` 在本地生成，不入库。
 
 ## 常见问题
 
