@@ -1,6 +1,6 @@
-// ===== 52户型装修设计 · 桌面版：DXF 图纸识别模块 =====
+// ===== 紫檀山装修设计器 · 桌面版：DXF 图纸识别模块 =====
 // 纯 JS、零依赖。把 AutoCAD 导出 DXF 里的墙线还原成「墙中线 + 墙厚」，再交给设计器生成整套方案。
-// 主进程 require('./app/dxf.js') 直接用；单测：node build/unit_dxf.js
+// 主进程 require('./app/dxf.js') 直接用；单测：node build/test_dxf.js <file.dxf> [layer,layer...]
 (function () {
   'use strict';
 
@@ -363,7 +363,233 @@
     };
   }
 
-  var API = { parse: parse, analyzeLayers: analyzeLayers, toSpec: toSpec, entities: entities };
+  /* ---------------------- 尺寸标注：把图上的数字读出来 ---------------------- */
+  // 结论口径：尺寸以标注为准。标注数字只用来「校核」识别结果，不直接改墙，
+  // 因为标注与实体经常不一致（改过图不倒标注），硬改会破坏闭合关系。
+  function cleanDxfText(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/\\P/g, ' ')
+      .replace(/\\~/g, '')
+      .replace(/\\[A-Za-z][^;\\]*;/g, '')
+      .replace(/\\U\+([0-9A-Fa-f]{4})/g, function (_, h) { return String.fromCharCode(parseInt(h, 16)); })
+      .replace(/[{}]/g, ' ')
+      .replace(/%%[dpc]/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function parseMeasure(raw) {
+    var t = cleanDxfText(raw);
+    if (!t) return null;
+    // 面积、角度、比例、标高、平方不是长度
+    if (/[°㎡%]|m²|M2|平方|标高|±|1\s*[:：]\s*\d/.test(t)) return null;
+    var m = t.match(/^[+\-]?\s*(\d+(?:\.\d+)?)/);
+    if (!m) return null;
+    var v = Number(m[1]);
+    if (!isFinite(v) || v < 60 || v > 60000) return null;
+    return v;
+  }
+
+  function analyzeDims(text) {
+    var es = entities(text);
+    var dims = [], texts = [], skipped = 0;
+    for (var i = 0; i < es.length; i++) {
+      var e = es[i];
+      if (e.type === 'DIMENSION') {
+        var x13 = gnum(e, 13), y13 = gnum(e, 23), x14 = gnum(e, 14), y14 = gnum(e, 24);
+        var tx = gnum(e, 11), ty = gnum(e, 21);
+        if (tx == null) tx = gnum(e, 10);
+        if (ty == null) ty = gnum(e, 20);
+        var val = null;
+        if (x13 != null && y13 != null && x14 != null && y14 != null) {
+          val = Math.hypot(x14 - x13, y14 - y13);
+          if (!isFinite(val) || val < 60 || val > 60000) val = null;
+        }
+        if (val == null) {
+          var ov = parseMeasure(g1(e, 1));
+          if (ov != null) val = ov;
+        }
+        if (val == null) { skipped++; continue; }
+        var ang = gnum(e, 50);
+        if (ang == null) ang = (Math.abs((y14 || 0) - (y13 || 0)) > Math.abs((x14 || 0) - (x13 || 0))) ? 90 : 0;
+        dims.push({ value: Math.round(val), x: tx || ((x13 + x14) / 2), y: ty || ((y13 + y14) / 2), angle: normAng(ang), src: 'DIMENSION', layer: g1(e, 8) || '0' });
+        continue;
+      }
+      if (e.type === 'TEXT' || e.type === 'MTEXT') {
+        var raw = g1(e, 1) || (e.type === 'MTEXT' ? gitems(e, 3).join('') : '');
+        var v2 = parseMeasure(raw);
+        var px = gnum(e, 10), py = gnum(e, 20);
+        if (v2 == null || px == null || py == null) { if (v2 == null) skipped++; continue; }
+        texts.push({ value: Math.round(v2), x: px, y: py, angle: normAng(gnum(e, 50)), src: e.type, layer: g1(e, 8) || '0', text: cleanDxfText(raw) });
+      }
+    }
+    return { dims: dims, texts: texts, skipped: skipped, total: dims.length + texts.length };
+  }
+
+  function normAng(a) {
+    a = Number(a || 0) % 360;
+    if (a < 0) a += 360;
+    return Math.round(a * 100) / 100;
+  }
+
+  // 把标注和识别出的墙逐条对账：横向标注找横向墙，纵向标注找纵向墙
+  function verifyDims(walls, dimList, opt) {
+    opt = opt || {};
+    var tolPct = opt.tolPct || 0.012, tolAbs = opt.tolAbs || 40, reach = opt.reach || 2600;
+    var list = (dimList && dimList.dims) ? dimList.dims.concat(dimList.texts || []) : (dimList || []);
+    var out = { checked: 0, ok: 0, badFlag: 0, skipped: 0, pairs: [], unmatched: 0 };
+    for (var i = 0; i < list.length; i++) {
+      var d = list[i];
+      var h = Math.abs(d.angle) < 25 || Math.abs(d.angle - 180) < 25 || Math.abs(d.angle - 360) < 25;
+      var v = Math.abs(d.angle - 90) < 25 || Math.abs(d.angle - 270) < 25;
+      if (!h && !v) { out.skipped++; continue; }
+      var best = null, nearMiss = 0;
+      for (var k = 0; k < walls.length; k++) {
+        var w = walls[k];
+        var dx = Math.abs(w.b[0] - w.a[0]), dy = Math.abs(w.b[1] - w.a[1]);
+        var isH = dx >= dy;
+        if (h && !isH) continue;
+        if (v && isH) continue;
+        var len = Math.round(isH ? dx : dy);
+        // 长度先过一道筛：标注是 400 的短尺寸不该拿 4 米的墙去对
+        if (Math.abs(len - d.value) > Math.max(600, d.value * 0.45)) continue;
+        if (isH) {
+          var wy = (w.a[1] + w.b[1]) / 2, cx = (w.a[0] + w.b[0]) / 2;
+          if (Math.abs(wy - d.y) > reach) continue;
+          if (Math.abs(cx - d.x) > d.value * 0.6 + 1200) { nearMiss++; continue; }
+          var cost = Math.abs(cx - d.x) + Math.abs(wy - d.y) * 0.8 + Math.abs(len - d.value) * 0.2;
+        } else {
+          var wx = (w.a[0] + w.b[0]) / 2, cy = (w.a[1] + w.b[1]) / 2;
+          if (Math.abs(wx - d.x) > reach) continue;
+          if (Math.abs(cy - d.y) > d.value * 0.6 + 1200) { nearMiss++; continue; }
+          var cost = Math.abs(cy - d.y) + Math.abs(wx - d.x) * 0.8 + Math.abs(len - d.value) * 0.2;
+        }
+        if (!best || cost < best.cost) best = { wall: w, cost: cost, len: len };
+      }
+      if (!best) { out.unmatched++; continue; }
+      out.checked++;
+      var diff = best.len - d.value;
+      var tol = Math.max(tolAbs, Math.round(d.value * tolPct));
+      var keep = Math.abs(diff) <= tol;
+      if (keep) out.ok++; else out.badFlag++;
+      out.pairs.push({ 标注: d.value, 图长: best.len, 差: diff, 单位: 'mm', 判定: keep ? 'ok' : (Math.abs(diff) > tol * 4 ? '严重' : '偏差'), 位置: [Math.round(d.x), Math.round(d.y)], 方向: h ? '水平' : '竖直', 来源: d.src });
+    }
+    return out;
+  }
+
+  /* --------------------- 整栋/多层：按空隙自动切成几层 --------------------- */
+  function bboxOf(walls) {
+    var x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (var i = 0; i < walls.length; i++) {
+      var w = walls[i];
+      x0 = Math.min(x0, w.a[0], w.b[0]); x1 = Math.max(x1, w.a[0], w.b[0]);
+      y0 = Math.min(y0, w.a[1], w.b[1]); y1 = Math.max(y1, w.a[1], w.b[1]);
+    }
+    return [x0, y0, x1, y1];
+  }
+
+  // 一张图里画了几层（并排/上下摆放的多层平面）。
+  // 判据：把墙投影到坐标轴，同一层内部墙的投影几乎连绵，层与层之间会出现明显的空带；
+  // 用「空带宽度 vs 整张图跨度」切分，比按墙与墙两两距离聚类稳得多（大户型内部距离也很大）。
+  function coverageBands(walls, ax) {
+    var iv = walls.map(function (w) {
+      return [Math.min(w.a[ax], w.b[ax]), Math.max(w.a[ax], w.b[ax])];
+    }).sort(function (a, b) { return a[0] - b[0]; });
+    var uni = [];
+    for (var i = 0; i < iv.length; i++) {
+      var r = iv[i], last = uni[uni.length - 1];
+      if (last && r[0] <= last[1] + 2) last[1] = Math.max(last[1], r[1]);
+      else uni.push([r[0], r[1]]);
+    }
+    return uni;
+  }
+
+  function splitRec(walls, opt, out, depth) {
+    if (walls.length < opt.minWalls || depth > 5) { out.push(walls); return; }
+    var bb = bboxOf(walls);
+    var extent = Math.max(bb[2] - bb[0], bb[3] - bb[1], 1);
+    var minBand = Math.max(opt.gap || 2200, extent * (opt.bandFrac || 0.06));
+    var cut = null;
+    for (var ax = 0; ax < 2; ax++) {
+      var uni = coverageBands(walls, ax);
+      for (var i = 1; i < uni.length; i++) {
+        var band = uni[i][0] - uni[i - 1][1];
+        if (band < minBand) continue;
+        var mid = (uni[i][0] + uni[i - 1][1]) / 2;
+        var lo = walls.filter(function (w) { return Math.max(w.a[ax], w.b[ax]) <= mid; });
+        var hi = walls.filter(function (w) { return Math.min(w.a[ax], w.b[ax]) >= mid; });
+        if (lo.length < opt.minWalls || hi.length < opt.minWalls) continue;
+        if (!cut || band > cut.band) cut = { ax: ax, mid: mid, band: band, lo: lo, hi: hi };
+      }
+    }
+    if (!cut) { out.push(walls); return; }
+    splitRec(cut.lo, opt, out, depth + 1);
+    splitRec(cut.hi, opt, out, depth + 1);
+  }
+
+  function splitFloors(walls, opt) {
+    opt = opt || {};
+    opt.minWalls = opt.minWalls || 4;
+    var out = [];
+    if (!walls || !walls.length) return { count: 0, multi: false, floors: [], groups: [] };
+    splitRec(walls, opt, out, 0);
+    out.sort(function (a, b) {
+      var ba = bboxOf(a), bb2 = bboxOf(b);
+      return (Math.round(ba[0] / 500) - Math.round(bb2[0] / 500)) || (Math.round(ba[1] / 500) - Math.round(bb2[1] / 500));
+    });
+    return {
+      count: out.length,
+      multi: out.length > 1,
+      floors: out.map(function (ws, i) {
+        var bb = bboxOf(ws);
+        return { index: i, walls: ws.length, w: Math.round(bb[2] - bb[0]), h: Math.round(bb[3] - bb[1]), bbox: bb.map(Math.round) };
+      }),
+      groups: out
+    };
+  }
+
+  // 每层各自挪回原点（并排画的图要各自归一，不然层与层差几万毫米）
+  function reorigin(walls, pad) {
+    pad = pad == null ? 300 : pad;
+    var bb = bboxOf(walls);
+    var dx = pad - bb[0], dy = pad - bb[1];
+    return walls.map(function (w) {
+      return {
+        a: [Math.round(w.a[0] + dx), Math.round(w.a[1] + dy)],
+        b: [Math.round(w.b[0] + dx), Math.round(w.b[1] + dy)],
+        t: Math.round(w.t || 200),
+        bearing: w.bearing !== false,
+        ext: w.ext || null
+      };
+    });
+  }
+
+  // 多层 spec：一层一组墙，层高/层名可指定
+  function toSpecMulti(results, names, opt) {
+    opt = opt || {};
+    var floors = results.map(function (walls, i) {
+      return {
+        name: (names && names[i]) || ['一层', '二层', '三层', '四层', '五层', '六层'][i] || ('第' + (i + 1) + '层'),
+        height: (opt.heights && opt.heights[i]) || opt.height || 3000,
+        walls: walls,
+        autoElec: opt.autoElec === false ? false : true
+      };
+    });
+    return {
+      name: opt.name || '导入图纸（整栋）',
+      slab: opt.slab || 120,
+      base: 0,
+      site: { city: opt.city || '成都', month: opt.month || 9 },
+      floors: floors
+    };
+  }
+
+  var API = {
+    parse: parse, analyzeLayers: analyzeLayers, toSpec: toSpec, entities: entities,
+    analyzeDims: analyzeDims, verifyDims: verifyDims, splitFloors: splitFloors,
+    reorigin: reorigin, toSpecMulti: toSpecMulti, bboxOf: bboxOf
+  };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   if (typeof window !== 'undefined') window.DSDXF = API;
 })();
