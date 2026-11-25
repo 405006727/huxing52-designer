@@ -2,7 +2,7 @@
 // 只做「桌面外壳」该做的事：窗口、菜单、读写本机文件、下载落盘、主题与外挂小挂件。
 // 设计器本体逻辑全部在 app/designer.html 内，一行未改。
 
-const { app, BrowserWindow, Menu, dialog, shell, session, ipcMain, nativeTheme } = require('electron');
+const { app, BrowserWindow, Menu, dialog, shell, session, ipcMain, nativeTheme, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -14,9 +14,12 @@ const HTML = path.join(ROOT, 'app', 'designer.html');
 const THEME = path.join(ROOT, 'theme.css');
 const THEME_DARK = path.join(ROOT, 'theme-dark.css');
 const PICKER = path.join(ROOT, 'app', 'picker.js');
+const ASK = path.join(ROOT, 'app', 'ask.js');
 const SHELL = path.join(ROOT, 'app', 'shell.js');
 const BUILDER_ICON = path.join(ROOT, 'build', 'icon.ico');
 const DXF = require('./app/dxf.js');
+const IMGWALL = require('./app/imgwall.js');
+const AUDIT = require('./app/audit.js');
 
 const IS_SELFTEST = process.argv.includes('--selftest');
 const DEBUG = process.argv.includes('--debug');
@@ -355,22 +358,69 @@ async function applyDxf(file, opt) {
   }
 
   const s = res.stats;
+
+  // 尺寸标注校核：图上标注的数字 vs 识别出的墙长（只报偏差，不改墙）
+  let dimsInfo = null;
+  try {
+    const d = DXF.analyzeDims(text);
+    if (d.total) {
+      const vr = DXF.verifyDims(res.walls, d);
+      dimsInfo = {
+        total: d.total, checked: vr.checked, ok: vr.ok, bad: vr.badFlag, unmatched: vr.unmatched,
+        pairs: vr.pairs.filter(p => p.判定 !== 'ok').slice(0, 12), source: d,
+      };
+      try {
+        fs.mkdirSync(path.join(DATA.dir, '对账'), { recursive: true });
+        fs.writeFileSync(path.join(DATA.dir, '对账', 'last-dims-report.json'),
+          JSON.stringify({ file: path.basename(file), generatedAt: new Date().toISOString(), dims: d, verify: vr }, null, 1), 'utf8');
+      } catch (e) {}
+    }
+  } catch (e) { console.warn('dims', e.message); }
+
+  // 整栋：一张图里并排画了几层
+  let split = null;
+  try { split = DXF.splitFloors(res.walls, { gap: opt.floorGap || 2200, minWalls: 4 }); } catch (e) { console.warn('split', e.message); }
+  let multi = !!(split && split.multi) && opt.multi !== false;
+  if (interactive && split && split.multi) {
+    const ok = await dialog.showMessageBox(win, {
+      type: 'question',
+      title: '图里像是画了 ' + split.count + ' 层',
+      message: '按墙群之间的空当判断，这张图里有 ' + split.count + ' 个互不相连的平面',
+      detail: [
+        split.floors.map(f => `第 ${f.index + 1} 处：${f.walls} 面墙，约 ${(f.w / 1000).toFixed(1)} × ${(f.h / 1000).toFixed(1)} 米`).join('\n'),
+        '',
+        '「整栋生成」= 每处当一层，生成 ' + split.count + ' 层楼的整栋方案（层高 3000、楼板 120）',
+        '「合成一层」= 全部并进当前这一层（上下游的关系由你后面自己改）',
+      ].join('\n'),
+      buttons: ['整栋生成（' + split.count + ' 层）', '合成为一层'], defaultId: 0, cancelId: 1, noLink: true,
+    });
+    multi = ok.response === 0;
+  }
+
   if (interactive) {
+    const dimLine = dimsInfo
+      ? '图上标注 ' + dimsInfo.total + ' 条，可对账 ' + dimsInfo.checked + ' 条：一致 ' + dimsInfo.ok + '，偏差 ' + dimsInfo.bad + '，未匹配 ' + dimsInfo.unmatched
+      : '图上没读到尺寸标注（不影响生成）';
     const ok = await dialog.showMessageBox(win, {
       type: 'question',
       title: '生成方案',
-      message: '识别出 ' + res.walls.length + ' 面墙，其中承重墙 ' + s.bearingWalls + ' 面',
+      message: multi
+        ? '识别出 ' + res.walls.length + ' 面墙，将生成 ' + split.count + ' 层的整栋方案'
+        : '识别出 ' + res.walls.length + ' 面墙，其中承重墙 ' + s.bearingWalls + ' 面',
       detail: [
         '图纸范围约 ' + (s.widthMM / 1000).toFixed(1) + ' × ' + (s.depthMM / 1000).toFixed(1) + ' 米',
+        multi ? split.floors.map(f => `第 ${f.index + 1} 层：${f.walls} 面墙`).join('；') : null,
         '已勾选图层：' + picked.join('、'),
         '层高按 3000、楼板 120 生成；房间分区与水电位点由设计器自动识别布置。',
+        dimLine,
+        dimsInfo && dimsInfo.bad ? '有 ' + dimsInfo.bad + ' 条标注与图线不一致（图上改过没倒标注），建议生成后在「工具 → 方案对账」里逐条核对。' : null,
         '',
         '当前打开的方案会被替换（替换前会自动备份一份到数据目录）。',
-      ].join('\n'),
+      ].filter(Boolean).join('\n'),
       buttons: ['生成方案', '取消'],
       defaultId: 0, cancelId: 1, noLink: true,
     });
-    if (ok.response !== 0) return { ok: false, error: 'cancel', layers: picked, stats: s };
+    if (ok.response !== 0) return { ok: false, error: 'cancel', layers: picked, stats: s, dims: dimsInfo };
   }
 
   // 先备份当前整栋方案
@@ -379,7 +429,15 @@ async function applyDxf(file, opt) {
     if (cur && cur.length > 10) fs.writeFileSync(path.join(DATA.dir, 'backup-before-dxf-import.json'), cur, 'utf8');
   } catch (e) {}
 
-  const spec = DXF.toSpec(res, label, { city: '成都', height: 3000, slab: 120 });
+  let spec;
+  if (multi && split && split.count > 1) {
+    // 整栋：每处墙群各自归一坐标，一层一组墙
+    const groups = split.groups.map(g => DXF.reorigin(g, 300));
+    spec = DXF.toSpecMulti(groups, null, { name: label + '（整栋）', city: '成都', height: 3000, slab: 120 });
+  } else {
+    spec = DXF.toSpec(res, label, { city: '成都', height: 3000, slab: 120 });
+  }
+  const specWalls = spec.floors.reduce((n, f) => n + (f.walls || []).length, 0);
   const done = await run(`(() => {
     try {
       if (!window.__dsSpecToBuilding) return 'ERR:设计器缺少 spec 入口';
@@ -406,9 +464,173 @@ async function applyDxf(file, opt) {
     await sleep(1200);
     win.setTitle(label + ' — ' + APP_NAME);
     saveState({ dxf: file });
-    notice('已从「' + label + '」生成方案：' + done + ' 面墙' + (elecN ? ' · ' + elecN + ' 个水电点位已自动布置' : '') + ' · 门窗可在「门窗」工具里补、房间名可在左栏改', 5600);
+    const floorNote = multi && split ? ' · ' + split.count + ' 层整栋' : '';
+    const dimNote = dimsInfo && dimsInfo.bad ? ' · ' + dimsInfo.bad + ' 条标注与图线不一致（见 对账\\last-dims-report.json）' : '';
+    notice('已从「' + label + '」生成方案：' + specWalls + ' 面墙' + floorNote + (elecN ? ' · ' + elecN + ' 个水电点位已自动布置' : '') + dimNote + ' · 门窗可在「门窗」工具里补、房间名可在左栏改', 6000);
   }
-  return { ok: true, specWalls: done, walls: counts && counts.walls, rooms: counts && counts.rooms, elec: elecN, layers: picked, stats: s };
+  return { ok: true, specWalls: specWalls, floors: spec.floors.length, walls: counts && counts.walls, rooms: counts && counts.rooms, elec: elecN, layers: picked, stats: s, dims: dimsInfo ? { total: dimsInfo.total, checked: dimsInfo.checked, ok: dimsInfo.ok, bad: dimsInfo.bad, unmatched: dimsInfo.unmatched } : null, split: split ? { count: split.count, multi: split.multi, floors: split.floors } : null };
+}
+
+/* ------------------------------ 方案对账（报告） ------------------------------ */
+// 把当前整栋方案导成 JSON，和最近导入的 DXF 一起喂给 app/audit.js，
+// 生成 markdown 报告落到 对账\ 目录，再用系统默认程序打开。
+async function runAudit() {
+  let bld = null;
+  try { bld = await run('window.__designer && window.__designer.bld ? JSON.stringify(window.__designer.bld) : null'); } catch (e) {}
+  if (!bld || bld.length < 20) { notice('当前没有打开的方案，先导入图纸或新建一个'); return { ok: false, error: 'no-plan' }; }
+  let plan;
+  try { plan = JSON.parse(bld); } catch (e) { return { ok: false, error: 'bad-plan' }; }
+
+  // building → 规整成 {name, floors:[{name,walls}]}
+  const floors = (plan.floors || []).map((f, i) => {
+    const p = f.plan || f;
+    return { name: p.name || f.name || ('第' + (i + 1) + '层'), walls: (p.walls || []).map(normalizeWall) };
+  });
+  const spec = { name: (plan.name || '当前方案'), floors: floors.filter(f => f.walls.length) };
+
+  let dxfText = null, layers = null;
+  const dxfPath = (loadState() || {}).dxf || '';
+  try {
+    if (dxfPath && fs.existsSync(dxfPath)) {
+      dxfText = decodeDxf(fs.readFileSync(dxfPath));
+      const ls = DXF.analyzeLayers(dxfText).layers || [];
+      const guess = ls.filter(o => o.suggested).map(o => o.layer);
+      layers = guess.length ? guess : null;
+    }
+  } catch (e) { console.warn('audit dxf', e.message); }
+
+  const rep = AUDIT.audit({ spec, dxfText, layers });
+  const outDir = path.join(DATA.dir, '对账');
+  fs.mkdirSync(outDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
+  const mdPath = path.join(outDir, '对账-' + stamp + '.md');
+  fs.writeFileSync(mdPath, rep.markdown, 'utf8');
+  fs.writeFileSync(mdPath.replace(/\.md$/, '.json'), JSON.stringify(rep, null, 1), 'utf8');
+  shell.openPath(mdPath);
+  notice('对账完成：' + rep.verdict + ' · 报告已保存到 ' + mdPath, 6000);
+  return { ok: true, verdict: rep.verdict, file: mdPath, errors: rep.structure.errors.length, warnings: rep.structure.warnings.length, dims: rep.dims ? { checked: rep.dims.checked, bad: rep.dims.bad } : null, roundtrip: rep.roundtrip ? { same: rep.roundtrip.same } : null };
+}
+
+// building 里的墙字段名可能不同（a/b + t），统一成 {a,b,t}
+function normalizeWall(w) {
+  if (!w) return null;
+  const a = w.a || w.p1 || [w.x1, w.y1];
+  const b = w.b || w.p2 || [w.x2, w.y2];
+  if (!a || !b) return null;
+  return { a: [a[0], a[1]], b: [b[0], b[1]], t: w.t || w.thick || 200 };
+}
+
+/* ------------------------- 户型图片识别（位图 → 方案） ------------------------ */
+// 流程：读图（nativeImage 解码，无需第三方库）→ 灰度 → 识墙（app/imgwall.js）
+// → 用户给「图上这套房的实际总宽」做比例尺 → 生成方案 → 自动布水电。
+async function applyImagePlan(file, opt) {
+  opt = opt || {};
+  const interactive = opt.interactive !== false;
+  const autoMep = opt.autoMep !== false;
+  const label = opt.name || path.basename(file).replace(/\.(png|jpg|jpeg|bmp|webp)$/i, '');
+
+  const img = nativeImage.createFromPath(file);
+  if (img.isEmpty()) {
+    if (interactive) dialog.showErrorBox('读图失败', '这张图打不开（可能是 CMYK / 超大 TIFF / 损坏文件）。用 PNG / JPG 再试。');
+    return { ok: false, error: 'decode' };
+  }
+  let size = img.getSize();
+  // 控制分辨率上限，避免一张 8K 图把内存吃满
+  const MAXSIDE = 2600;
+  if (Math.max(size.width, size.height) > MAXSIDE) {
+    const k = MAXSIDE / Math.max(size.width, size.height);
+    size = { width: Math.round(size.width * k), height: Math.round(size.height * k) };
+    img = img.resize({ width: size.width, height: size.height, quality: 'good' });
+  }
+  const bmp = img.toBitmap(); // BGRA
+  const gray = IMGWALL.toGrayFromRGBA(bmp, size.width, size.height);
+
+  const det = IMGWALL.detect(gray, size.width, size.height, opt.detect || {});
+  if (!det.ok) {
+    if (interactive) dialog.showErrorBox('没认出墙', det.error || '这张图里没读到像墙的线条。');
+    return { ok: false, error: det.error || 'detect' };
+  }
+
+  const bb = det.bboxPx;
+  const bbW = bb.w, bbH = bb.h;
+  let realW = opt.realWidthMM || 0;
+  if (!realW && interactive) {
+    realW = await run(`window.__dsAsk ? window.__dsAsk(${JSON.stringify({
+      title: '确认比例尺',
+      hint: '图上识别到 ' + det.walls.length + ' 面墙（墙厚约 ' + det.thicknessPx + ' 像素）。量一下这套房子最外沿的总宽（毫米），或者直接选一个常见尺寸。',
+      label: '实际总宽',
+      def: Math.round(bbW * 11.9 / 100) * 100,
+      suffix: 'mm',
+      presets: [8000, 10000, 12000, 14000, 16000],
+    })}) : null`);
+    if (!realW) return { ok: false, error: 'cancel', walls: det.walls.length };
+  }
+  if (!realW) realW = Math.round(bbW * 11.9); // 自测/静默模式：按常见比例估
+
+  const mmPerPx = realW / bbW;
+  const wallsMM = IMGWALL.toMillisWalls(det.walls, mmPerPx, { maxThick: 400, minThick: 80 });
+  if (interactive) {
+    const totalH = Math.round(bbH * mmPerPx);
+    const ok = await dialog.showMessageBox(win, {
+      type: 'question',
+      title: '生成方案',
+      message: '识别出 ' + det.walls.length + ' 面墙，面积尺度约 ' + (realW / 1000).toFixed(1) + ' × ' + (totalH / 1000).toFixed(1) + ' 米',
+      detail: [
+        '墙厚按 1 像素 ≈ ' + mmPerPx.toFixed(2) + ' 毫米换算',
+        '识别得到的墙只含「直墙中线 + 墙厚」：门洞、飘窗、家具需要生成后再补。',
+        '图上若有尺寸标注，可用菜单「工具 → 方案对账」核对尺寸。',
+        '',
+        '当前打开的方案会被替换（替换前自动备份一份到数据目录）。',
+      ].join('\n'),
+      buttons: ['生成方案', '取消'], defaultId: 0, cancelId: 1, noLink: true,
+    });
+    if (ok.response !== 0) return { ok: false, error: 'cancel', walls: det.walls.length };
+  }
+
+  try {
+    const cur = await run('window.__designer && window.__designer.bld ? JSON.stringify(window.__designer.bld) : null');
+    if (cur && cur.length > 10) fs.writeFileSync(path.join(DATA.dir, 'backup-before-img-import.json'), cur, 'utf8');
+  } catch (e) {}
+
+  const spec = DXF.toSpec({ walls: wallsMM }, label, { city: '成都', height: 3000, slab: 120 });
+  const done = await run(`(() => {
+    try {
+      if (!window.__dsSpecToBuilding) return 'ERR:设计器缺少 spec 入口';
+      const b = window.__dsSpecToBuilding(${JSON.stringify(spec)});
+      window.__designer.replacePlan(b);
+      if (window.__designer.fit2D) window.__designer.fit2D();
+      return b.floors[0].plan.walls.length;
+    } catch (e) { return 'ERR:' + (e && e.message); }
+  })()`);
+  if (typeof done !== 'number') {
+    if (interactive) dialog.showErrorBox('生成失败', String(done || '设计器没有接受这份方案'));
+    return { ok: false, error: String(done), walls: det.walls.length };
+  }
+
+  const mep = autoMep ? await autoPlaceMep() : { elec: -1 };
+  const counts = await run(`(() => {
+    const D = window.__designer;
+    return { walls: D.app.plan.walls.length, rooms: Object.keys(D.app.rooms || {}).length, elec: D.app.plan.elec.length };
+  })()`);
+  const elecN = (mep && typeof mep.elec === 'number' && mep.elec > 0) ? mep.elec : (counts && counts.elec) || 0;
+
+  if (interactive) {
+    await sleep(1000);
+    win.setTitle(label + ' — ' + APP_NAME);
+    saveState({ image: file });
+    notice('已从图片「' + label + '」生成方案：' + done + ' 面墙 · 比例 1 像素 ≈ ' + mmPerPx.toFixed(2) + ' 毫米' + (elecN ? ' · ' + elecN + ' 个水电点位' : '') + ' · 门洞与家具请在图上补', 6000);
+  }
+  return { ok: true, specWalls: spec.floors.reduce((n, f) => n + (f.walls || []).length, 0), floors: spec.floors.length, walls: counts && counts.walls, rooms: counts && counts.rooms, elec: elecN, pxWalls: det.walls.length, thicknessPx: det.thicknessPx, mmPerPx: Number(mmPerPx.toFixed(3)), inkRatio: det.inkRatio };
+}
+
+async function importImage() {
+  const r = await dialog.showOpenDialog(win, {
+    title: '从户型图片新建方案',
+    filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'bmp', 'webp'] }, { name: '全部文件', extensions: ['*'] }],
+    properties: ['openFile'],
+  });
+  if (r.canceled || !r.filePaths.length) return;
+  await applyImagePlan(r.filePaths[0], { interactive: true });
 }
 
 async function importDxf() {
@@ -453,6 +675,7 @@ function buildMenu() {
       submenu: [
         { label: '打开方案…', accelerator: 'CmdOrCtrl+O', click: openPlan },
         { label: '从 CAD 图纸新建（DXF）…', accelerator: 'CmdOrCtrl+Shift+D', click: importDxf },
+        { label: '从户型图片新建（自动识墙）…', accelerator: 'CmdOrCtrl+Alt+G', click: importImage },
         { label: '导入户型图（描图底图）…', accelerator: 'CmdOrCtrl+Alt+I', click: importUnderlay },
         { label: '保存方案…', accelerator: 'CmdOrCtrl+S', click: savePlan },
         { label: '另存为副本…', accelerator: 'CmdOrCtrl+Shift+S', click: savePlan },
@@ -530,6 +753,8 @@ function buildMenu() {
         { label: '标注', accelerator: 'CmdOrCtrl+Alt+8', click: () => clickByText('标注') },
         { label: '测量', accelerator: 'CmdOrCtrl+Alt+9', click: () => clickByText('测量') },
         { label: '拆墙', click: () => clickByText('拆墙') },
+        { type: 'separator' },
+        { label: '方案对账（结构 / 尺寸链 / 墙体往返）…', accelerator: 'CmdOrCtrl+Alt+A', click: runAudit },
       ],
     },
     {
@@ -564,7 +789,9 @@ function showShortcuts() {
       'Ctrl+Shift+M  两栏都收起（画布最大化）',
       'Ctrl+Shift+L  切换深色 / 浅色',
       'Ctrl+Shift+D  从 CAD 图纸（DXF）新建方案',
+      'Ctrl+Alt+G  从户型图片新建方案（自动识墙）',
       'Ctrl+Alt+I  导入户型图（描图底图）',
+      'Ctrl+Alt+A  方案对账（结构 / 尺寸链 / 墙体往返）',
       'Ctrl+Alt+1~9   选择 / 画墙 / 房间 / 门窗 / 水电 / 管线 / 造型 / 标注 / 测量',
       '',
       '设计器内部的操作和浏览器版完全一致：左栏点按钮，图上点位置。',
@@ -602,7 +829,8 @@ function showAbout() {
       'Electron ' + process.versions.electron + '  ·  Chromium ' + process.versions.chrome,
       '',
       '2D 平面 / 3D 立体 / 家具 / 水电点位与回路 / 管线手绘 /',
-      '半圆墙 · 拆地板 · 补地板 · 墙高洞口 / 报价 / PDF 施工图 / DXF 导出 / CAD 图纸识别导入。',
+      '半圆墙 · 拆地板 · 补地板 · 墙高洞口 / 报价 / PDF 施工图 / DXF 导出 /',
+      'CAD 图纸识别导入（含尺寸标注校核、多层整栋成型）/ 户型图片自动识墙 / 方案对账。',
       '',
       '安装目录：' + (app.isPackaged ? path.dirname(process.execPath) : ROOT),
       '数据目录：' + DATA.dir,
@@ -682,6 +910,10 @@ function createWindow() {
     try {
       await run(fs.readFileSync(PICKER, 'utf8'));
     } catch (e) { console.warn('picker', e.message); }
+    // 数字输入浮层（确认比例尺、填实际尺寸用）
+    try {
+      await run(fs.readFileSync(ASK, 'utf8'));
+    } catch (e) { console.warn('ask', e.message); }
     // 左右栏收起/展开（贴边小把手，页面内挂载）
     try {
       await run(fs.readFileSync(SHELL, 'utf8'));
@@ -780,6 +1012,20 @@ async function runSelfTest() {
       })()`);
     }
 
+    // ===== 3.5 位图识墙：拿合成户型图（build/fixture_plan.png）走一遍 =====
+    const imgFixture = process.env.DS_IMG_FILE && fs.existsSync(process.env.DS_IMG_FILE) ? process.env.DS_IMG_FILE
+      : path.join(ROOT, 'build', 'fixture_plan.png');
+    if (fs.existsSync(imgFixture)) {
+      checks.imageFile = path.basename(imgFixture);
+      checks.imageImport = await applyImagePlan(imgFixture, { interactive: false, autoMep: true, name: '图片识墙测试', realWidthMM: 12340 });
+      await wait(2000);
+      await shot('-img');
+      checks.afterImage = await run(`(() => {
+        const D = window.__designer;
+        return { walls: D.app.plan.walls.length, rooms: Object.keys(D.app.rooms || {}).length, elec: D.app.plan.elec.length };
+      })()`);
+    }
+
     // ===== 4. 往返：导出 DXF → 再识别 → 再生成方案 → 复原 =====
     try {
       const before = await run('window.__designer && window.__designer.bld ? JSON.stringify(window.__designer.bld) : null');
@@ -826,6 +1072,63 @@ async function runSelfTest() {
         }
       }
     } catch (e) { checks.dxfFail = String(e && e.message); }
+
+    // ===== 4.5 对账：尺寸标注校核 + 多层切分 + 结构报告 =====
+    try {
+      const fixture2 = path.join(ROOT, 'build', 'fixture_cad.dxf');
+      if (fs.existsSync(fixture2)) {
+        const text2 = fs.readFileSync(fixture2, 'utf8');
+        const dm = DXF.analyzeDims(text2);
+        const ls2 = DXF.analyzeLayers(text2).layers || [];
+        const pick2 = ls2.filter(o => o.suggested).map(o => o.layer);
+        const res2 = DXF.parse(text2, { layers: pick2.length ? pick2 : undefined });
+        checks.dimsTotal = dm.total;
+        checks.dimsVertify = DXF.verifyDims(res2.ok ? res2.walls : [], dm);
+        const shift = res2.walls.map(w => ({ ...w, a: [w.a[0] + 30000, w.a[1]], b: [w.b[0] + 30000, w.b[1]] }));
+        const one = DXF.splitFloors(res2.walls, {});
+        const two2 = DXF.splitFloors(res2.walls.concat(shift), {});
+        checks.splitSingle = one.count;
+        checks.splitDouble = two2.count;
+        const rep = AUDIT.audit({
+          spec: DXF.toSpec(res2, '对账夹具', {}), dxfText: text2,
+          layers: pick2.length ? pick2 : null,
+        });
+        checks.auditVerdict = rep.verdict;
+        checks.auditErrors = rep.structure.errors.length;
+        checks.auditWarnings = rep.structure.warnings.length;
+        checks.auditDims = rep.dims ? { checked: rep.dims.checked, ok: rep.dims.ok, bad: rep.dims.bad } : null;
+        checks.auditRoundtrip = rep.roundtrip ? { same: rep.roundtrip.same, walls: rep.roundtrip.walls } : null;
+        fs.writeFileSync(path.join(artDir, 'audit-report.md'), rep.markdown, 'utf8');
+      }
+    } catch (e) { checks.auditFail = String(e && e.message); }
+
+    // ===== 4.6 整栋（两层）成型：挑出 4 道墙复制成第二层，看设计器能否建成楼房 =====
+    try {
+      const base = await run('window.__designer && window.__designer.bld ? JSON.stringify(window.__designer.bld) : null');
+      const f1 = DXF.parse(fs.readFileSync(path.join(ROOT, 'build', 'fixture_cad.dxf'), 'utf8'), { layers: ['WALL'] });
+      if (f1.ok) {
+        const g1 = DXF.reorigin(f1.walls.slice(0, Math.max(6, Math.floor(f1.walls.length / 3))), 300);
+        const g2 = DXF.reorigin(f1.walls.slice(-Math.max(6, Math.floor(f1.walls.length / 3))), 300);
+        const spec2 = DXF.toSpecMulti([g1, g2], ['一层', '二层'], { name: '两层对账夹具', height: 3000 });
+        checks.multiSpec = await run(`(() => {
+          try {
+            const b = window.__dsSpecToBuilding(${JSON.stringify(spec2)});
+            window.__designer.replacePlan(b);
+            if (window.__designer.fit2D) window.__designer.fit2D();
+            return { floors: window.__designer.bld.floors.length, names: window.__designer.bld.floors.map(f => f.plan.name),
+                     perFloor: window.__designer.bld.floors.map(f => f.plan.walls.length) };
+          } catch (e) { return 'ERR:' + (e && e.message); }
+        })()`);
+        await wait(1500);
+        await shot('-multi');
+      }
+      if (base) {
+        checks.multiRestore = await run(`(() => { try {
+          const b = JSON.parse(${JSON.stringify(base)}); b.kind = 'building'; b.version = 2;
+          window.__designer.replacePlan(b); return window.__designer.bld.floors.length;
+        } catch (e) { return 'ERR:' + e.message; } })()`);
+      }
+    } catch (e) { checks.multiFail = String(e && e.message); }
 
     // ===== 5. 菜单项 + 菜单切视图 =====
     const menu = Menu.getApplicationMenu();
