@@ -1,0 +1,200 @@
+/* ==========================================================================
+   52户型装修设计 · 桌面版外观层 v2 —— 深色模式
+   用法：主进程在切换主题时 insertCSS / removeInsertedCSS；不改 DOM。
+   ========================================================================== */
+
+:root{
+  --accent:#3b82f6 !important;
+  --accent-soft:rgba(59,130,246,.16) !important;
+  --line:#2a3341 !important;
+  --panel:#161b24 !important;
+  --text:#e7ecf4 !important;
+  --muted:#93a1b5 !important;
+  --danger:#f05252 !important;
+  --new:#f59e0b !important;
+  --bg:#0f1218;
+  --ds-panel-2:#1b2230;
+  --ds-panel-3:#222b3a;
+  --ds-shadow-1:0 1px 2px rgba(0,0,0,.35);
+  --ds-shadow-2:0 8px 22px rgba(0,0,0,.45);
+  --ds-shadow-3:0 26px 64px rgba(0,0,0,.6);
+  color-scheme:dark;
+}
+
+html, body{
+  background:#0f1218 !important;
+  color:var(--text) !important;
+}
+
+/* 顶栏 / 面板 */
+header, .topbar, .top-bar, .toolbar{
+  background:#121821 !important;
+  box-shadow:0 1px 0 #222b3a, 0 6px 18px rgba(0,0,0,.35) !important;
+}
+#leftPanel, #rightPanel, .panel, #side{
+  background:var(--panel) !important;
+  border-color:var(--line) !important;
+  box-shadow:none !important;
+}
+.tabs, .tabbar, .tabhead{ background:#121821 !important; border-color:var(--line) !important; }
+
+/* 画布 / 舞台 */
+#stage, .stage{
+  background:
+    radial-gradient(900px 620px at 50% 0%, #1a2230 0%, rgba(26,34,48,0) 62%),
+    linear-gradient(180deg, #10151d 0%, #0c1016 100%) !important;
+}
+.pane, #pane2d, #pane3d{ background:transparent !important; }
+
+/* 按钮 / 分段 / 输入控件 */
+.btn{
+  background:var(--ds-panel-2) !important;
+  border-color:#2f3a4b !important;
+  color:var(--text) !important;
+}
+.btn:hover:not(:disabled){ background:var(--ds-panel-3) !important; border-color:#3b485c !important; }
+.btn.primary{
+  background:linear-gradient(180deg,#4b8dfa,#2563eb) !important;
+  border-color:#2563eb !important;
+  color:#fff !important;
+}
+.seg{
+  background:#121821 !important;
+  border-color:#2a3341 !important;
+}
+.seg button, .seg .on{ color:var(--text) !important; }
+.seg .on, .seg .active{
+  background:#243044 !important;
+  color:#fff !important;
+  box-shadow:0 1px 0 rgba(255,255,255,.06) inset !important;
+}
+
+input, select, textarea{
+  background:#1b2230 !important;
+  border-color:#2f3a4b !important;
+  color:var(--text) !important;
+}
+input::placeholder, textarea::placeholder{ color:#6b788c !important; }
+input:hover, select:hover, textarea:hover{ border-color:#3b485c !important; }
+option{ background:#1b2230; color:var(--text); }
+
+/* 卡片 / 区块 */
+.sec{ background:#1a212c !important; border-color:#2a3341 !important; }
+.sec h4{ color:#c7d2e0 !important; }
+.sec h4::before{ background:linear-gradient(180deg,#93c5fd,#3b82f6) !important; }
+.hint, .tips, .muted{ color:var(--muted) !important; }
+.kv, .kv b{ color:#dbe3ef !important; }
+
+/* 浮层 */
+.dropdown, .modal-box, .poprow, .dialog{
+  background:#161d27 !important;
+  border-color:#2a3341 !important;
+  color:var(--text) !important;
+}
+#toast{
+  background:rgba(233,238,246,.94) !important;
+  color:#0f172a !important;
+}
+
+/* 控件收口：面板里所有小按钮 / 图例按钮 / 画布角落按钮 */
+#leftPanel button, #rightPanel button, .tabbody button, .icongrid button, .toolgrid button{
+  background:#1b2230 !important;
+  border-color:#2f3a4b !important;
+  color:var(--text) !important;
+}
+#leftPanel button:hover, #rightPanel button:hover{ background:#232c3c !important; border-color:#3b485c !important; }
+#leftPanel button.on, #leftPanel button.active, .icongrid button.on, .toolgrid button.on{
+  background:#243044 !important;
+  border-color:#3b82f6 !important;
+  color:#fff !important;
+  box-shadow:0 0 0 1px rgba(59,130,246,.35) inset !important;
+}
+.ibtn{ background:#1b2230 !important; border-color:#2f3a4b !important; color:#c7d2e0 !important; }
+.ibtn em{ color:#7d8da3 !important; }
+.iconbtn{
+  background:rgba(22,29,39,.92) !important;
+  border-color:#2a3341 !important;
+  color:#c7d2e0 !important;
+}
+.iconbtn:hover{ background:#232c3c !important; }
+kbd{
+  background:#232c3c !important;
+  border-color:#3b485c !important;
+  color:#c7d2e0 !important;
+}
+
+/* 顶栏品牌区（深色下原本会留一条浅色） */
+header .brand, header .logo, .brand, .logo{ background:transparent !important; }
+.brand b{ color:#eef3fa !important; }
+.brand small, .brand .muted, .brand .phase{ color:#93a1b5 !important; }
+.phase{
+  background:rgba(59,130,246,.16) !important;
+  border:1px solid rgba(59,130,246,.35) !important;
+  color:#9ec5ff !important;
+  border-radius:6px;
+}
+.logo{ box-shadow:0 2px 10px rgba(0,0,0,.5) !important; }
+
+/* 左栏标签条 */
+.tabs, .tabbar{ background:#121821 !important; border-color:#2a3341 !important; }
+.tabs button, .tabbar button{ color:#a9b6c9 !important; background:transparent !important; }
+.tabs button.on, .tabbar button.on{ color:#fff !important; background:transparent !important; }
+
+/* 卡片（深色） */
+:root{ --ds-card:#1a212c; --ds-card-hover:#1f2734; }
+.sec{ background:#1a212c !important; border-color:#2a3341 !important; }
+.sec:hover{ background:#1f2734 !important; border-color:#354153 !important; }
+
+/* 滚动条 */
+::-webkit-scrollbar-thumb{ background:#3a475a; background-clip:content-box; }
+::-webkit-scrollbar-thumb:hover{ background:#4a5a72; background-clip:content-box; }
+
+/* 桌面版徽标 / 通知 / 图层选择面板 */
+#dsDeskBadge{
+  background:rgba(22,29,39,.92) !important;
+  border-color:#2a3341 !important;
+  color:#93a1b5 !important;
+}
+#dsNotice{ background:rgba(240,244,250,.95); color:#0f172a; }
+
+#dsLayerPick{ background:rgba(4,7,12,.6) !important; }
+#dsLayerPick .dslp-card{
+  background:#161d27 !important;
+  box-shadow:0 32px 80px rgba(0,0,0,.7) !important;
+  color:var(--text);
+}
+#dsLayerPick .dslp-head{
+  background:linear-gradient(180deg,#1a212c,#161d27) !important;
+  border-color:#2a3341 !important;
+}
+#dsLayerPick .dslp-head b{ color:#eaf0f8 !important; }
+#dsLayerPick .dslp-hint{ background:#1a212c !important; border-color:#2a3341 !important; color:#9fb0c6 !important; }
+#dsLayerPick .dslp-row:hover{ background:#1f2734 !important; }
+#dsLayerPick .dslp-name{ color:#e7ecf4 !important; }
+#dsLayerPick .dslp-tip{ color:#7d8da3 !important; }
+#dsLayerPick .dslp-foot{ background:#141a23 !important; border-color:#2a3341 !important; }
+#dsLayerPick .dslp-btn.ghost{ background:#1b2230 !important; color:#c7d2e0 !important; border-color:#2f3a4b !important; }
+#dsLayerPick .dslp-btn.ghost:hover{ background:#232c3c !important; }
+#dsLayerPick input{ accent-color:#3b82f6; }
+
+/* 楼层快切浮层深色 */
+#floorDock{
+  background:#161b24 !important;
+  border:1px solid #2a3341 !important;
+  box-shadow:0 12px 30px rgba(0,0,0,.5) !important;
+  backdrop-filter:none !important;
+}
+#floorDock .fd-h, #floorDock .fd-tip{ color:#93a1b5 !important; }
+#floorDock .fd-tg{ color:#93a1b5 !important; }
+#floorDock .fd-list button{ background:#1a212c !important; border-color:#2a3341 !important; color:#e7ecf4 !important; }
+#floorDock .fd-list button.on{ background:#2563eb !important; border-color:#2563eb !important; color:#fff !important; }
+
+/* 侧栏折叠把手（深色） */
+.ds-edge{
+  background:linear-gradient(180deg,#1a212c,#141a23) !important;
+  border-color:#2a3341 !important;
+  color:#93a1b5 !important;
+  box-shadow:0 4px 16px rgba(0,0,0,.5) !important;
+}
+.ds-edge:hover{ background:linear-gradient(180deg,#22304a,#1a2536) !important; color:#93c5fd !important; }
+.ds-edge.shut{ background:linear-gradient(180deg,#161b24,#11161f) !important; color:#6b7c94 !important; }
